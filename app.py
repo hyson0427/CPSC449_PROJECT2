@@ -25,6 +25,38 @@ async def get_all_books():
     return all_books
 
 
+# GET /book_count: Retrieves the total number of books in the store
+@app.get("/book_count")
+async def get_book_count():
+    count = await book_collection.aggregate([{"$count": "total_books"}]).to_list(
+        length=None
+    )
+    return count[0]["total_books"]
+
+
+# GET /bestsellers: Retrieves a list of the top 5 best-selling books
+# (meaning books that have the lowest stock)
+@app.get("/bestsellers")
+async def get_bestsellers():
+    result = await book_collection.aggregate(
+        [{"stock": {"$gt": 0}}, {"$sort": {"stock": -1}}, {"$limit": 5}]
+    ).to_list(length=None)
+    return result
+
+
+# GET /top_authors: Retrieves a list of the top 5 authors
+@app.get("/top_authors")
+async def get_top_authors():
+    result = await book_collection.aggregate(
+        [
+            {"$group": {"_id": "$author", "total_books": {"$sum": 1}}},
+            {"$sort": {"total_books": -1}},
+            {"$limit": 5},
+        ]
+    ).to_list(length=None)
+    return result
+
+
 # GET /books/{book_id}: Retrieves a specific book by ID
 @app.get("/books/{book_id}")
 async def get_book_by_id(book_id: int) -> Book:
@@ -67,7 +99,7 @@ async def search_books(
         query["price"] = {"$gte": min_price}
     if max_price:
         query["price"] = {"$lte": max_price}
-    result = await database["books"].find(query)
+    result = await book_collection.find(query)
     found_books = await result.to_list(length=None)
 
     return found_books
