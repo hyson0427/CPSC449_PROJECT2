@@ -1,3 +1,7 @@
+from typing import Optional
+
+import pymongo.errors
+from bson import ObjectId, errors
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -18,12 +22,14 @@ class Book(BaseModel):
 
 # Generates all of the indices in MongoDB
 async def create_indices():
-    await book_collection.create_index("title")
+    await book_collection.create_index(
+        "title", unique=True
+    )  # Only one book of the same title
     await book_collection.create_index("author")
     await book_collection.create_index("price")
     await book_collection.create_index("stock")
 
-    # Create a compond index for usage with the search endpoint
+    # Create a compound index for usage with the search endpoint
     await book_collection.create_index([("title", 1), ("author", 1), ("price", 1)])
 
 
@@ -38,6 +44,10 @@ async def on_startup():
 async def get_all_books():
     result = book_collection.find({})
     all_books = await result.to_list(length=None)
+
+    # Change all object ids to strings. Otherwise this will cause an error
+    # because FastAPI cannot serialize object ids
+    all_books = [stringify_object_id(book) for book in all_books]
 
     return all_books
 
@@ -56,8 +66,13 @@ async def get_book_count():
 @app.get("/bestsellers")
 async def get_bestsellers():
     result = await book_collection.aggregate(
-        [{"stock": {"$gt": 0}}, {"$sort": {"stock": -1}}, {"$limit": 5}]
+        [{"$match": {"stock": {"$gt": 0}}}, {"$sort": {"stock": 1}}, {"$limit": 5}]
     ).to_list(length=None)
+
+    # Change all object ids to strings. Otherwise this will cause an error
+    # because FastAPI cannot serialize object ids
+    result = [stringify_object_id(book) for book in result]
+
     return result
 
 
@@ -76,53 +91,89 @@ async def get_top_authors():
 
 # GET /books/{book_id}: Retrieves a specific book by ID
 @app.get("/books/{book_id}")
-async def get_book_by_id(book_id: int) -> Book:
-    return await book_collection.find_one({"_id": book_id})
+async def get_book_by_id(book_id: str):
+    try:
+        result = await book_collection.find_one({"_id": ObjectId(book_id)})
+    except errors.InvalidId:
+        return {"Result": "Invalid book id specified."}
+
+    return stringify_object_id(result) if result else {"Result": "No book found."}
 
 
 # POST /books: Adds a new book to the store
 @app.post("/books")
 async def add_new_book(book: Book):
-    await book_collection.insert_one(book.dict())
+    try:
+        await book_collection.insert_one(book.dict())
+    except pymongo.errors.DuplicateKeyError:
+        return {"Result": "Book with this title already exists."}
+    except Exception:
+        return {"Result": "Failed to add book."}
+
+    return {"Result": "Successfully added book."}
 
 
 # PUT /books/{book_id}: Updates an existing book by ID
 @app.put("/books/{book_id}")
-async def update_book_by_id(book_id: int, book: Book):
-    await book_collection.update_one({"_id": book_id}, {"$set": book.dict()})
+async def update_book_by_id(book_id: str, book: Book):
+    result = await book_collection.update_one(
+        {"_id": ObjectId(book_id)}, {"$set": book.dict()}
+    )
+    return (
+        {"Result": f"Successfully updated book {book_id}."}
+        if result.modified_count == 1
+        else {"Result": f"Failed to update book {book_id}."}
+    )
 
 
 # DELETE /books/{book_id}: Deletes a book from the store by ID
 @app.delete("/books/{book_id}")
-async def delete_book_by_id(book_id: int):
-    await book_collection.delete_one({"_id": book_id})
+async def delete_book_by_id(book_id: str):
+    result = await book_collection.delete_one({"_id": ObjectId(book_id)})
+    return (
+        {"Result": f"Successfully deleted book {book_id}."}
+        if result.deleted_count == 1
+        else {"Result": f"Failed to delete book {book_id}."}
+    )
+
+
+def stringify_object_id(book):
+    book["_id"] = str(book["_id"])
+    return book
 
 
 # GET /search?title={}&author={}&min_price={}&max_price={}: Searches for books
 # by title, author, and price range
 @app.get("/search")
 async def search_books(
-    title: str | None = None,
-    author: str | None = None,
-    min_price: float | None = None,
-    max_price: float | None = None,
+    title: Optional[str] = "",
+    author: Optional[str] = "",
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
 ):
     query = {}
     if title:
-        query["title"] = title
+        query["title"] = {"$regex": title, "$options": "i"}
     if author:
-        query["author"] = author
-    if min_price:
-        query["price"] = {"$gte": min_price}
-    if max_price:
-        query["price"] = {"$lte": max_price}
-    result = await book_collection.find(query)
+        query["author"] = {"$regex": author, "$options": "i"}
+    if min_price or max_price:
+        price_query = {}
+        if min_price:
+            price_query["$gte"] = min_price
+        if max_price:
+            price_query["$lte"] = max_price
+        query["price"] = price_query
+    result = book_collection.find(query)
     found_books = await result.to_list(length=None)
 
-    return found_books
+    # Change all object ids to strings. Otherwise this will cause an error
+    # because FastAPI cannot serialize object ids
+    found_books = [stringify_object_id(book) for book in found_books]
+
+    return found_books if found_books else {"Result": "No books found."}
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="localhost", port=8080)
+    uvicorn.run(app, host="localhost", port=8000)
