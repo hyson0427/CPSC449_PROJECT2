@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 mongo_client = AsyncIOMotorClient("mongodb://localhost:27017")
@@ -9,11 +9,11 @@ book_collection = database["books"]
 
 
 class Book(BaseModel):
-    title: str
-    author: str
-    description: str
-    price: int
-    stock: int
+    title: str = Field(..., min_length=1)
+    author: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    price: int = Field(..., ge=0)
+    stock: int = Field(..., ge=0)
 
 
 # GET /books: Retrieves a list of all books in the store
