@@ -12,12 +12,13 @@ database = mongo_client["bookstore"]
 book_collection = database["books"]
 
 
+# Pydantic model for books
 class Book(BaseModel):
-    title: str = Field(..., min_length=1)
-    author: str = Field(..., min_length=1)
-    description: str = Field(..., min_length=1)
-    price: int = Field(..., ge=0)
-    stock: int = Field(..., ge=0)
+    title: str = Field(..., min_length=1)  # Required field
+    author: str = Field(..., min_length=1)  # Required field
+    description: str = Field(..., min_length=1)  # Required field
+    price: int = Field(..., ge=0)  # Price can't be negative
+    stock: int = Field(..., ge=0)  # Stock can't be negative
 
 
 # Generates all of the indices in MongoDB
@@ -55,6 +56,7 @@ async def get_all_books():
 # GET /book_count: Retrieves the total number of books in the store
 @app.get("/book_count")
 async def get_book_count():
+    # Use aggregation to get the book count
     count = await book_collection.aggregate([{"$count": "total_books"}]).to_list(
         length=None
     )
@@ -65,6 +67,7 @@ async def get_book_count():
 # (meaning books that have the lowest stock)
 @app.get("/bestsellers")
 async def get_bestsellers():
+    # Use aggregation to get books with low stock
     result = await book_collection.aggregate(
         [{"$match": {"stock": {"$gt": 0}}}, {"$sort": {"stock": 1}}, {"$limit": 5}]
     ).to_list(length=None)
@@ -79,6 +82,7 @@ async def get_bestsellers():
 # GET /top_authors: Retrieves a list of the top 5 authors
 @app.get("/top_authors")
 async def get_top_authors():
+    # Use aggregation to get authors with the most books
     result = await book_collection.aggregate(
         [
             {"$group": {"_id": "$author", "total_books": {"$sum": 1}}},
@@ -94,6 +98,7 @@ async def get_top_authors():
 async def get_book_by_id(book_id: str):
     try:
         result = await book_collection.find_one({"_id": ObjectId(book_id)})
+    # Check for invalid ids
     except errors.InvalidId:
         return {"Result": "Invalid book id specified."}
 
@@ -105,6 +110,7 @@ async def get_book_by_id(book_id: str):
 async def add_new_book(book: Book):
     try:
         await book_collection.insert_one(book.dict())
+    # Don't allow multiple books with the same title
     except pymongo.errors.DuplicateKeyError:
         return {"Result": "Book with this title already exists."}
     except Exception:
@@ -176,4 +182,5 @@ async def search_books(
 if __name__ == "__main__":
     import uvicorn
 
+    # Run the server by default on port 8000
     uvicorn.run(app, host="localhost", port=8000)

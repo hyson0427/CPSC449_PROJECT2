@@ -23,6 +23,7 @@ random_author_names = [
 ]
 
 
+# Generates random words, sentences, titles and authors using an online word list
 class RandomGenerator:
     WORD_LIST_URL = "https://www.mit.edu/~ecprice/wordlist.10000"
 
@@ -52,10 +53,10 @@ class RandomGenerator:
         )
 
 
+# Adds a specified number of random books to the database
 def add_random_books_to_database(count: int):
     client = MongoClient("mongodb://localhost:27017")
     db = client["bookstore"]
-
     book_collection = db["books"]
 
     for i in range(count):
@@ -63,6 +64,7 @@ def add_random_books_to_database(count: int):
         book_collection.insert_one(book.dict())
 
 
+# Generates a single random book
 def generate_random_book() -> Book:
     r = RandomGenerator()
     title = r.get_random_title()
@@ -80,5 +82,6 @@ def generate_random_book() -> Book:
     return book
 
 
+# Add random books to the database when this file is run
 if __name__ == "__main__":
     add_random_books_to_database(10)
