@@ -16,10 +16,27 @@ class Book(BaseModel):
     stock: int = Field(..., ge=0)
 
 
+# Generates all of the indices in MongoDB
+async def create_indices():
+    await book_collection.create_index("title")
+    await book_collection.create_index("author")
+    await book_collection.create_index("price")
+    await book_collection.create_index("stock")
+
+    # Create a compond index for usage with the search endpoint
+    await book_collection.create_index([("title", 1), ("author", 1), ("price", 1)])
+
+
+# Create all indices on startup
+@app.on_event("startup")
+async def on_startup():
+    await create_indices()
+
+
 # GET /books: Retrieves a list of all books in the store
 @app.get("/books")
 async def get_all_books():
-    result = await book_collection.find({})
+    result = book_collection.find({})
     all_books = await result.to_list(length=None)
 
     return all_books
@@ -103,3 +120,9 @@ async def search_books(
     found_books = await result.to_list(length=None)
 
     return found_books
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="localhost", port=8080)
