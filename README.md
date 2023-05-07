@@ -4,8 +4,8 @@ CSUF CPSC449 Last Project
 
 ## Team Members
 
-HaYeon SON
-Matt Watkins
+- HaYeon SON
+- Matt Watkins
 
 ## Project Description
 
