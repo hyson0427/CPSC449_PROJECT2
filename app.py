@@ -55,4 +55,3 @@ async def search_books(
     max_price: float | None = None,
 ):
     pass
-    pass
