@@ -3,7 +3,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
 app = FastAPI()
-mongo = AsyncIOMotorClient("mongodb://localhost:27017")
+mongo_client = AsyncIOMotorClient("mongodb://localhost:27017")
+database = mongo_client["bookstore"]
+book_collection = database["books"]
 
 
 class Book(BaseModel):
@@ -17,31 +19,34 @@ class Book(BaseModel):
 # GET /books: Retrieves a list of all books in the store
 @app.get("/books")
 async def get_all_books():
-    mongo["bookstore"]["books"].find({})
+    result = await book_collection.find({})
+    all_books = await result.to_list(length=None)
+
+    return all_books
 
 
 # GET /books/{book_id}: Retrieves a specific book by ID
 @app.get("/books/{book_id}")
-async def get_book_by_id(book_id: int):
-    mongo["bookstore"]["books"].find_one({"_id": book_id})
+async def get_book_by_id(book_id: int) -> Book:
+    return await book_collection.find_one({"_id": book_id})
 
 
 # POST /books: Adds a new book to the store
 @app.post("/books")
 async def add_new_book(book: Book):
-    mongo["bookstore"]["books"].insert_one(book.dict())
+    await book_collection.insert_one(book.dict())
 
 
 # PUT /books/{book_id}: Updates an existing book by ID
 @app.put("/books/{book_id}")
 async def update_book_by_id(book_id: int, book: Book):
-    mongo["bookstore"]["books"].update_one({"_id": book_id}, {"$set": book.dict()})
+    await book_collection.update_one({"_id": book_id}, {"$set": book.dict()})
 
 
 # DELETE /books/{book_id}: Deletes a book from the store by ID
 @app.delete("/books/{book_id}")
 async def delete_book_by_id(book_id: int):
-    mongo["bookstore"]["books"].delete_one({"_id": book_id})
+    await book_collection.delete_one({"_id": book_id})
 
 
 # GET /search?title={}&author={}&min_price={}&max_price={}: Searches for books
@@ -62,10 +67,7 @@ async def search_books(
         query["price"] = {"$gte": min_price}
     if max_price:
         query["price"] = {"$lte": max_price}
-    result = mongo["bookstore"]["books"].find(query)
-
-    found_books = []
-    for book in result:
-        found_books.append(book)
+    result = await database["books"].find(query)
+    found_books = await result.to_list(length=None)
 
     return found_books
